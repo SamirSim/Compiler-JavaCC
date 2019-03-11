@@ -1,0 +1,370 @@
+//* Section 1 - Options *//
+options {
+  IGNORE_CASE = true;
+  STATIC = false;
+}
+
+
+//* Section 2 - Main Program *//
+PARSER_BEGIN(AfComposer)
+
+import java.util.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+
+public class AfComposer {
+
+    static ManipAutomate manipAutomate = new ManipAutomate("AutomateEtatFini");
+    static GUI gui = new GUI();
+    static int numEtat = 0;
+    static String etatInit="S0", etatFinal="S0";
+    ArrayList<String> props = new ArrayList<String>();
+    ArrayList<String> evts = new ArrayList<String>();
+    String nomComp, typeComp;
+    
+    public static void main(String args[]) throws ParseException {
+        try {
+            System.out.println("Entrez le nom du fichier .ihm : ");
+            Scanner reader = new Scanner(System.in);
+            AfComposer parser = new AfComposer(new java.io.FileInputStream(reader.nextLine()));
+            reader.close();
+            parser.program();
+            manipAutomate.printTransitionTable("Automate.txt");
+            System.out.println("OK !");
+        }
+        catch (Exception e){
+            e.printStackTrace();
+            System.out.println("File does not exist");
+        }
+    }
+}
+
+PARSER_END(AfComposer)
+
+//*Section 3 - Tokens */
+
+//Chars to escape
+SKIP : 
+{
+    " "
+|   "\n"
+|   "\t"
+|   "\r"
+}
+
+//Key words
+TOKEN :
+{
+    <DEBUT: "DEBUT">
+|   <INTERFACE: "interface">
+|   <COMP: "comp">
+|   <PROP: "prop">
+|   <EVT: "evt">
+|   <INITIALISATIONS: "initialisations">
+|   <ACTIONS: "actions">
+|   <FIN: "fin">
+|   <COMPTYPE: ("Caneva"|"Menu"|"Fenêtre"|"Fenetre"|"BoiteDialogue"|"Panel"|"Bouton"|"ChampTexte"|"ComboBox"|"ListeDéroulante"|"CaseACocher"|"BoutonRadio"|"Icône")>
+|   <NOMEVENEMENT: ("ClickBtFerm"|"ClickBtRed"|"ClickBtAgr"|"ClickTitre"|"Click"|"DoubleClick"|"ChrKeyPress"|"NumKeyPress"|"EnterKeyPress"|"Drag"|"Drop"|"EnterPress"|"DbClick")>
+}
+
+
+//Symbols used
+TOKEN :
+{
+    <deuxPoints: ":">
+|   <pointVirgule: ";">
+|   <parentheseG: "(">
+|   <parentheseD: ")">
+|   <crochetG: "{">
+|   <crochetD: "}">
+|   <doubleDeuxPoints: "::">
+|   <affectation: ":=">
+|   <typePropNum: "int">
+|   <typePropLog: "boolean">
+|   <virgule: ",">
+|   <si: "if">
+|   <alors: "then">
+|   <egal: "="> 
+|   <different: "<>">
+|   <plus: "+">
+|   <moins: "-">
+|   <tild: "~">
+|   <#vrai: "true">
+|   <#faux: "false">
+|   <booleen: (<vrai> | <faux>)>
+|   <quote: "'">
+|   <lettre: (["a"-"z"] | ["A"-"Z"])>
+|   <opLogique: ("and" | "or")>
+|   <mot: (<lettre>)+>
+|   <#chiffre: (["0"-"9"])>
+|   <nombre: (<chiffre>)+>
+}
+
+
+//* Section 4 - Rules and actions *//
+void program():
+{}
+{
+    <DEBUT> <INTERFACE> __interface() <INITIALISATIONS> initialisations() {manipAutomate.addState(etatInit,false);} <ACTIONS> actions() {manipAutomate.setStateFinal(etatFinal);} <FIN> <EOF>
+}
+
+void __interface():
+{}
+{
+    (<COMP> nomComp = compId() <deuxPoints> typeComp = compType() (<parentheseG> compId() <parentheseD>)? <pointVirgule> compLigne())* 
+}
+
+void initialisations():
+{}
+{
+    (initialisation())*
+}
+
+ManipAutomate.Transition actions():
+{
+    String nomEvent, etatInitLocal = etatInit, etatFinalLocal = etatFinal, sauve = etatInit;
+    ManipAutomate.Transition trans, transFinal;
+}
+{
+    trans = action('!', sauve, etatFinalLocal) {
+        if (trans != null) {
+            etatInit = "S"+numEtat;
+            numEtat++;
+            etatFinal = "S" + numEtat;
+            nomEvent = trans.evtName;
+            etatInitLocal = etatInit; 
+            etatFinalLocal = etatFinal;
+            manipAutomate.addState(etatFinal,false);
+            manipAutomate.addTransition(new ManipAutomate.Transition(nomEvent,etatInit,etatFinal));
+        }
+        transFinal = null;
+    }
+    (
+        <plus> {
+            if (trans == null) {
+                numEtat++;
+                etatFinal = "S" + numEtat;
+                manipAutomate.addState(etatFinal,false);
+                manipAutomate.addTransition(new ManipAutomate.Transition("Epsilon",etatFinalLocal,etatFinal));
+                etatInitLocal = etatInit;
+                etatFinalLocal = etatFinal;
+            }
+        }
+        trans = action('+',sauve,etatFinalLocal) {
+            if (trans != null) {
+                numEtat++;
+                etatFinal = "S"+numEtat;
+                nomEvent = trans.evtName;
+                etatFinalLocal = etatFinal;
+                manipAutomate.addState(etatFinal,false);
+                manipAutomate.addTransition(new ManipAutomate.Transition(nomEvent,etatInit,etatFinal));
+            }
+        }
+        | 
+        <tild> trans = action('~',etatInitLocal,etatFinalLocal) {
+            if (trans != null) {
+                nomEvent = trans.evtName;
+                manipAutomate.addTransition(new ManipAutomate.Transition(nomEvent,etatInitLocal,etatFinalLocal));
+            }
+            else {
+                manipAutomate.addTransition(new ManipAutomate.Transition("Epsilon",etatFinalLocal,etatFinal));
+            }
+        }
+        |
+        <pointVirgule>
+        trans = action(';',sauve,etatFinalLocal) {
+            if (trans != null) {
+                sauve = etatFinal;
+                numEtat++;
+                etatFinal = "S"+numEtat;
+                nomEvent = trans.evtName;
+                etatInitLocal = etatInit;
+                etatFinalLocal = etatFinal;
+                manipAutomate.addState(etatFinal,false);
+                manipAutomate.addTransition(new ManipAutomate.Transition(nomEvent,etatInit,etatFinal));
+            }
+        }
+    )*
+    {return transFinal;}
+}
+
+void compLigne():
+{}
+{
+    <PROP> proprietes() <EVT> evenements() {gui.printComp("TableComp.gui",nomComp,typeComp,props,evts); props.clear(); evts.clear();}
+}
+
+void initialisation():
+{}
+{
+    <mot> <doubleDeuxPoints> propId() <affectation> valeur() <pointVirgule>
+}
+
+ManipAutomate.Transition action(char c, String etatInitLocal, String etatFinalLocal):
+{
+    ManipAutomate.Transition trans;
+}
+{
+  trans = manipulation() {return trans;}
+  | <crochetG> {
+        if (c=='~') {
+            etatInit = etatInitLocal;//Inutile de créer un nouvel état
+        }
+        else {
+            etatInit = "S"+numEtat;
+        }
+        numEtat++;
+        etatFinal = "S"+numEtat;
+        manipAutomate.addState(etatFinal,false);
+        manipAutomate.addTransition(new ManipAutomate.Transition("Epsilon", etatInit, etatFinal));
+    }
+    trans = actions() <crochetD> {return trans;}
+}
+
+ManipAutomate.Transition manipulation():
+{
+    Token nomEvt, idEvent;
+    ManipAutomate.Transition trans;
+    String nomTrans;
+}
+{
+    nomEvt = <NOMEVENEMENT> {nomTrans = nomEvt.image;} <parentheseG> idEvent = <mot> {nomTrans += "(" + idEvent.image + ")"; trans = new ManipAutomate.Transition(nomTrans,nomEvt.toString(),"#");} <parentheseD> {return trans;}
+}
+
+void proprietes():
+{}
+{
+    (propriete())*
+}
+
+void evenements():
+{}
+{
+    (evenement())*
+}
+
+void propriete():
+{
+    String chaine;
+}
+{
+    chaine = propId() {props.add(chaine);} (<virgule> chaine = propId() {props.add(chaine);})* <deuxPoints> chaine = propType() {props.add(" : "); props.add(chaine);} <pointVirgule>
+}
+
+void evenement():
+{
+    String event;
+}
+{
+    event = nomEvenement() {evts.add(event);} (<parentheseG> <mot> <parentheseD>)? <crochetG> expression() (<pointVirgule> expression())* <crochetD>
+}
+
+String propType():
+{
+    String chaine;
+}
+{
+    chaine = propNum() {return chaine;}
+    | chaine = propAlpha() {return chaine;}
+    | chaine = propLog() {return chaine;}
+}
+
+String propNum():
+{
+    Token type;
+}
+{
+    type = <typePropNum> {return type.image;}
+}
+
+String propAlpha():
+{
+    Token type;
+}
+{
+    <crochetG> propAlphaElem() <crochetD> {return "AlphaNum";}
+}
+
+String propLog():
+{
+    Token type;
+}
+{
+    type = <typePropLog> {return type.image;}
+}
+
+void propAlphaElem():
+{}
+{
+    <mot> (<virgule> <mot>)*
+}
+
+void expression():
+{}
+{
+    (conditionnelle() | affectation())
+}
+
+void conditionnelle():
+{}
+{
+    <si> propId() operateur() valeur() <alors> affectation() (<opLogique> affectation())*
+}
+
+void affectation():
+{}
+{
+    propId() ("." <mot>)? <affectation> valeur()
+}
+
+String nomEvenement():
+{
+    Token nom;
+}
+{
+    nom = <NOMEVENEMENT> {return nom.image;}
+}
+String compId():
+{
+    Token nomComp;
+}
+{
+    nomComp = <mot> {return nomComp.image;} 
+}
+
+String compType():
+{
+    Token typeComp;
+}
+{
+    typeComp = <COMPTYPE> {return typeComp.image;}
+}
+
+String propId():
+{
+    Token chaine;
+}
+{
+    chaine = <mot> {return chaine.image;}
+}
+
+void operateur():
+{}
+{
+    (<egal> | <different>)
+}
+
+void valeur():
+{}
+{
+    (<nombre> | <booleen> | <mot>) (<plus> ("'")? valeur() ("'")?)*
+}
+
+void separateur():
+{}
+{
+    (<pointVirgule> | <plus> | <tild>)
+}
+
+
